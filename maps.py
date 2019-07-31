@@ -150,8 +150,8 @@ def gen_map(sizey, sizex, midy, midx):
         loadwin.border(0)
         loadwin.refresh()
         for v in v_regions:
-            diff = math.sqrt((v.x-x)**2 + (v.y-y)**2)
-            olddiff = math.sqrt((closest.x-x)**2 + (closest.y-y)**2)
+            diff = math.sqrt((v.x-x)**2) + math.sqrt((v.y-y)**2)
+            olddiff = math.sqrt((closest.x-x)**2) + math.sqrt((closest.y-y)**2)
             # Make walls around end of map
             if y == sizey-1 or y == -sizey or x == sizex-1 or x == -sizex:
                 game_objects['tiles'][(y,x)].type = WALL_TYPE

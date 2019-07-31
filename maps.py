@@ -503,7 +503,7 @@ def main(stdscr):
         elif c == ord('w') or c == curses.KEY_UP: # Move up
             if game_objects['tiles'][(y+midy-1,x+midx)].type != WALL_TYPE:
                 y -= 1
-        elif c == ord("+"): # Buggy resize of screen (experimental feature, may break stuff)
+        elif False and c == ord("+"): # Buggy resize of screen (experimental feature, may break stuff)
             stats.clear()
             win.clear()
             map.clear()
@@ -515,7 +515,7 @@ def main(stdscr):
             win.refresh()
             map.refresh()
             stdscr.refresh()
-        elif c == ord("-"): # Buggy resize of screen (experimental feature, may break stuff)
+        elif False and c == ord("-"): # Buggy resize of screen (experimental feature, may break stuff)
             stats.clear()
             win.clear()
             map.clear()

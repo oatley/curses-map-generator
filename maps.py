@@ -23,48 +23,38 @@ MAP_WIDTH = 70
 # Object used for each tile on the screen. Used to store data relating to tiles
 # such as the tile type, adjacent tile positions, or costs for pathfinding
 class Tile:
-    def __init__(self, y, x, ch, type):
+    def __init__(self, y, x, c):
         self.y = y
         self.x = x
-        self.ch = ch
-        self.type = type
-        self.neighbor_tiles = list()
-        self.neighbor_floors = list()
-        self.neighbor_walls = list()
+        self.ch = c
+        self.neighbors = list()
 
     def update_neighbors(self, game_objects):
-        self.neighbor_tiles = list()
-        self.neighbor_floors = list()
-        self.neighbor_walls = list()
+        self.neighbors = list()
         possible_neighbors = {(self.y+1,self.x), (self.y-1,self.x), (self.y,self.x+1), (self.y,self.x-1)}
         for y,x in possible_neighbors:
             try:
-                if game_objects['tiles'][(y,x)]:
-                    self.neighbor_tiles.append((y,x))
-                if game_objects['tiles'][(y,x)].type == WALL_TYPE:
-                    self.neighbor_walls.append((y,x))
-                if game_objects['tiles'][(y,x)].type == FLOOR_TYPE:
-                    self.neighbor_floors.append((y,x))
+                key = get_yx_key(y,x)
+                if game_objects[key]:
+                    self.neighbors.append(key)
             except KeyError:
                 pass
 
 # Shortcut to make wall tile object
 def add_wall(y, x):
-    a = Tile(y, x, WALLCH, WALL_TYPE)
+    a = Tile(y, x, WALLCH)
     return a
 
 # Shortcut to make floor tile object
 def add_floor(y, x):
-    a = Tile(y, x, FLOORCH, FLOOR_TYPE)
+    a = Tile(y, x, FLOORCH)
     return a
 
 # Custom classes are not serializable in json(could use _dict_?), create an easy to serialize data structure
 # Might be better to make a custom json encoder object, but this works for prototype
 def json_to_tile(jt):
-    tile = Tile(jt['y'], jt['x'], jt['ch'], jt['type'])
-    tile.neighbor_tiles = jt['neighbor_tiles']
-    tile.neighbor_floors = jt['neighbor_floors']
-    tile.neighbor_walls = jt['neighbor_walls']
+    tile = Tile(jt['y'], jt['x'], jt['c'])
+    tile.neighbors = jt['neighbors']
     return tile
 
 # Custom classes are not serializable in json(could use _dict_?), create an easy to serialize data structure
@@ -73,12 +63,15 @@ def tile_to_json(tile):
     jt = dict()
     jt['x'] = tile.x
     jt['y'] = tile.y
-    jt['ch'] = tile.ch
-    jt['type'] = tile.type
-    jt['neighbor_tiles'] = tile.neighbor_tiles
-    jt['neighbor_floors'] = tile.neighbor_floors
-    jt['neighbor_walls'] = tile.neighbor_walls
+    jt['c'] = tile.ch
+    jt['neighbors'] = tile.neighbors
     return jt
+
+def get_yx_key(y,x):
+    return str(y)+"x"+str(x)
+
+def get_tile_key(tile):
+    return str(tile.y)+"x"+ str(tile.x)
 
 # Creates a new map using voronoi regions, currently slow: 20 seconds for 100x100, 5-10 min for 300x300
 def gen_map(sizey, sizex, midy, midx):
@@ -91,10 +84,10 @@ def gen_map(sizey, sizex, midy, midx):
     loadwin.refresh()
     # Values for loading bars
     loadvalue = 1
-    loadmax = (sizey*2) * (sizex*2)
+    loadmax = sizey * sizex
     # Generate a solid grid of wall game objects for each tile position
-    game_objects = {'mapsize': {'y': sizey,'x': sizex}, 'player': dict(), 'tiles': dict()}
-    for x in range(-sizey, sizey):
+    game_objects = {'mapsize': {'y': sizey,'x': sizex, 'c': '$', 'neighbors': []}, 'player': {'y': sizey,'x': sizex, 'c': 'P', 'neighbors': []}}
+    for x in range(0, sizey):
         totaltime = time.process_time() - t
         percent = int((loadvalue / loadmax) * 100)
         loadwin.addstr(1, 1, '[Generating tiles] -> ' + str(percent) + '%')
@@ -104,8 +97,9 @@ def gen_map(sizey, sizex, midy, midx):
         loadwin.addstr(5, 1, '[Total Time]:' + str(int(totaltime)))
         loadwin.border(0)
         loadwin.refresh()
-        for y in range(-sizex, sizex):
-            game_objects['tiles'][(y,x)] = add_wall(y, x)
+        for y in range(0, sizex):
+            tmp = add_wall(y, x)
+            game_objects[get_tile_key(tmp)] = tmp
             loadvalue += 1
     # Values for loading bars, randomness adds to custom maps, and scales with large or small maps
     num = int ((sizex + sizey) / 2)
@@ -124,8 +118,8 @@ def gen_map(sizey, sizex, midy, midx):
         loadwin.addstr(5, 1, '[Total Time]:' + str(int(totaltime)))
         loadwin.border(0)
         loadwin.refresh()
-        rand_y = random.randrange(-sizey, sizey)
-        rand_x = random.randrange(-sizex, sizex)
+        rand_y = random.randrange(0, sizey)
+        rand_x = random.randrange(0, sizex)
         rand_type = random.randrange(0,2)
         if rand_type == 1:
             v_regions.append(add_floor(rand_y, rand_x))
@@ -136,9 +130,11 @@ def gen_map(sizey, sizex, midy, midx):
     # Values for loading bars, randomness adds to custom maps, and scales with large or small maps
     percent = 1
     loadvalue = 1
-    loadmax = (sizex*2) * (sizey*2) * regions
+    loadmax = sizex * sizey * regions
     # Convert all game obaects to closest voronoi region type (floor or wall)
-    for y,x in game_objects['tiles'].keys():
+    for key in game_objects.keys():
+        if key == "player" or key == "mapsize":
+            continue
         totaltime = time.process_time() - t
         closest = v_regions[0]
         percent = int((loadvalue / loadmax) * 100)
@@ -149,24 +145,26 @@ def gen_map(sizey, sizex, midy, midx):
         loadwin.addstr(5, 1, '[Total Time]:' + str(int(totaltime)))
         loadwin.border(0)
         loadwin.refresh()
+        y = game_objects[key].y
+        x = game_objects[key].x
         for v in v_regions:
             diff = math.sqrt((v.x-x)**2) + math.sqrt((v.y-y)**2)
             olddiff = math.sqrt((closest.x-x)**2) + math.sqrt((closest.y-y)**2)
             # Make walls around end of map
-            if y == sizey-1 or y == -sizey or x == sizex-1 or x == -sizex:
-                game_objects['tiles'][(y,x)].type = WALL_TYPE
-                game_objects['tiles'][(y,x)].ch = WALLCH
+            if y >= sizey-1 or y <= 0 or x >= sizex-1 or x <= 0:
+                game_objects[key].ch = WALLCH
             elif diff < olddiff:
                 closest = v
-                game_objects['tiles'][(y,x)].type = closest.type
-                game_objects['tiles'][(y,x)].ch = closest.ch
+                game_objects[key].ch = closest.ch
             loadvalue += 1
     # Values for loading bars
     percent = 1
     loadvalue = 1
-    loadmax = (sizex*2) * (sizey*2)
+    loadmax = sizex * sizey
     # Initialize tiles to know adjacent tiles neighbors, for pathfinding costing later
-    for y,x in game_objects['tiles'].keys():
+    for key in game_objects.keys():
+        if key == "player" or key == "mapsize":
+            continue
         totaltime = time.process_time() - t
         closest = v_regions[0]
         percent = int((loadvalue / loadmax) * 100)
@@ -178,7 +176,7 @@ def gen_map(sizey, sizex, midy, midx):
         loadwin.border(0)
         loadwin.refresh()
         # All neighbor updating is moved to the tile objects for reuse later
-        game_objects['tiles'][(y,x)].update_neighbors(game_objects)
+        game_objects[key].update_neighbors(game_objects)
         loadvalue += 1
     del loadwin
     return game_objects
@@ -188,14 +186,15 @@ def save_map(path, game_objects):
     # Inialize load bar window and values
     loadwin = curses.newwin(MAP_HEIGHT, MAP_WIDTH, 0, 0)
     loadvalue = 1
-    loadmax = len(game_objects['tiles'].keys())
+    loadmax = len(game_objects.keys())
     loadwin.clear()
     loadwin.refresh()
     # Converts tiles data structure into a json safe writable data structure
-    go = {'mapsize': game_objects['mapsize'], 'player': game_objects['player'], 'tiles': dict()}
-    for y,x in game_objects['tiles']:
-        i = str(y) + ',' + str(x)
-        go['tiles'][i] = tile_to_json(game_objects['tiles'][(y,x)])
+    go = {'mapsize': game_objects['mapsize'], 'player': game_objects['player']}
+    for key in game_objects.keys():
+        if key == "player" or key == "mapsize":
+            continue
+        go[key] = tile_to_json(game_objects[key])
         # Load bar
         percent = int((loadvalue / loadmax) * 100)
         loadvalue += 1
@@ -204,7 +203,7 @@ def save_map(path, game_objects):
         loadwin.refresh()
     # Values for loading bars
     loadvalue = 1
-    loadmax = len(game_objects['tiles'].keys())
+    loadmax = len(game_objects.keys())
     loadwin.addstr(2, 1, '[Compressing and writing '+path+']')
     loadwin.refresh()
     dirs = ['resources', 'resources/maps', 'resources/html_maps']
@@ -234,15 +233,15 @@ def load_map(path):
     # Decompress, store json into game_objects
     with gzip.GzipFile(path) as fin:
         go = json.loads(fin.read().decode('utf-8'))
-    game_objects = {'mapsize': go['mapsize'], 'player': go['player'], 'tiles': dict()}
+    game_objects = {'mapsize': go['mapsize'], 'player': go['player']}
     # Inialize load bar window and values
     loadvalue = 1
-    loadmax = len(go['tiles'].keys())
+    loadmax = len(go.keys()) - 2
     # Convert json object data into tile objects and store them in game_objects
-    for jt in go['tiles'].keys():
-        y,x = jt.split(',')
-        i = (int(y),int(x))
-        game_objects['tiles'][i] = json_to_tile(go['tiles'][jt])
+    for key in go.keys():
+        if key == "player" or key == "mapsize":
+            continue
+        game_objects[key] = json_to_tile(go[key])
         # Load bar
         percent = int((loadvalue / loadmax) * 100)
         loadvalue += 1
@@ -286,7 +285,8 @@ def menu():
         curses.curs_set(False)
         menu.border(0)
         menu.addstr(1, 1, 'G - generate new map')
-        menu.addstr(2, 1, 'L - load current map')
+        menu.addstr(2, 1, 'L - load map')
+        menu.addstr(3, 1, 'Q - quit program')
         menu.refresh()
         c = menu.getch()
         curses.flushinp() # clear other things besides getch?
@@ -304,25 +304,33 @@ def menu():
             game_objects = gen_map(mapsizey, mapsizex, midy, midx)
             menu.clear()
             menu.refresh()
+            save_map(path, game_objects)
+            """
             try:
                 save_map(path, game_objects)
             except:
                 menu.clear()
                 menu.addstr(MAP_HEIGHT-2, 1, 'error: failed to save map file (path or permissions?)')
                 continue
+            """
             menu.clear()
             menu.refresh()
-            html_map_export(mapsizey, mapsizex, game_objects)
+            #html_map_export(mapsizey, mapsizex, game_objects)
         elif c == ord('l') or c == ord('L'):
             # load current map1
             game_objects = {}
             path = load_map_path()
+            game_objects = load_map(path)
+            """
             try:
                 game_objects = load_map(path)
             except:
                 menu.clear()
                 menu.addstr(MAP_HEIGHT-2, 1, 'error: failed to load map file (possible corruption?)')
                 continue
+            """
+        elif c == ord('q') or c == ord('Q'):
+            exit(0)
         menu.clear()
         menu.refresh()
         del menu
@@ -464,6 +472,13 @@ def main(stdscr):
     x = 1
     midy = int(MAP_HEIGHT / 2) # FIXME: mid points break on too small maps
     midx = int(MAP_WIDTH / 2)
+    # Colours for different objects
+    curses.start_color()
+    curses.use_default_colors()
+    curses.init_pair(1, 57, 234) # Wall
+    curses.init_pair(2, 35, 0) # Player
+    curses.init_pair(3, 60, 0) # Floor
+    curses.curs_set(0)
     game_objects = {}
     while not game_objects:
         game_objects = menu()
@@ -479,29 +494,22 @@ def main(stdscr):
     win.nodelay(True) # Makes getch non blocking
     win.keypad(True)
     map.keypad(True)
-    curses.curs_set(0)
-    # Colours for different objects
-    curses.start_color()
-    curses.use_default_colors()
-    curses.init_pair(1, 57, 234) # Wall
-    curses.init_pair(2, 35, 0) # Player
-    curses.init_pair(3, 60, 0) # Floor
     # Main ncurses loop, draw map, accept user input, shift map drawing
     while True:
         # Get keyboard input
         c = win.getch()
         curses.flushinp() # cleans extra getch characters
         if c == ord('a') or c == curses.KEY_LEFT: # Move left
-            if game_objects['tiles'][(y+midy,x+midx-1)].type != WALL_TYPE:
+            if game_objects[get_yx_key(y+midy,x+midx-1)].ch != WALLCH:
                 x -= 1
         elif c == ord('d') or c == curses.KEY_RIGHT: # Move right
-            if game_objects['tiles'][(y+midy,x+midx+1)].type != WALL_TYPE:
+            if game_objects[get_yx_key(y+midy,x+midx+1)].ch != WALLCH:
                 x += 1
         elif c == ord('s') or c == curses.KEY_DOWN: # Move down
-            if game_objects['tiles'][(y+midy+1,x+midx)].type != WALL_TYPE:
+            if game_objects[get_yx_key(y+midy+1,x+midx)].ch != WALLCH:
                 y += 1
         elif c == ord('w') or c == curses.KEY_UP: # Move up
-            if game_objects['tiles'][(y+midy-1,x+midx)].type != WALL_TYPE:
+            if game_objects[get_yx_key(y+midy-1,x+midx)].ch != WALLCH:
                 y -= 1
         elif False and c == ord("+"): # Buggy resize of screen (experimental feature, may break stuff)
             stats.clear()
@@ -527,6 +535,8 @@ def main(stdscr):
             win.refresh()
             map.refresh()
             stdscr.refresh()
+        elif c == ord('q') or c == ord('Q'):
+            exit(0)
         # Draw stats window for position info, etc
         try:
             map.clear()
@@ -539,20 +549,20 @@ def main(stdscr):
         for ty in range(y-1, y+MAP_HEIGHT):
             for tx in range(x-1, x+MAP_WIDTH):
                 # Skip tiles that are outside map viewer
-                if ty >= mapsize['y'] or ty < -mapsize['y'] or tx >= mapsize['x'] or tx < -mapsize['x']:
+                if ty >= mapsize['y'] or ty < 0 or tx >= mapsize['x'] or tx < 0:
                     continue
-                # i is the index for all tiles
-                i = (ty,tx)
+                # key is the index for all tiles
+                key = get_yx_key(ty,tx)
                 # Get relative positions to left corner of screen (x,y)
-                go_y = game_objects['tiles'][i].y - y
-                go_x = game_objects['tiles'][i].x - x
+                go_y = game_objects[key].y - y
+                go_x = game_objects[key].x - x
                 # Draw tiles
                 try:
                     if (go_y > 0 and go_y < MAP_HEIGHT - 1) and (go_x > 0 and go_x < MAP_WIDTH - 1):
-                        if game_objects['tiles'][i].ch == WALLCH:
-                            map.addstr(game_objects['tiles'][i].y - y, game_objects['tiles'][i].x - x, game_objects['tiles'][i].ch, curses.color_pair(1))
+                        if game_objects[key].ch == WALLCH:
+                            map.addstr(game_objects[key].y - y, game_objects[key].x - x, game_objects[key].ch, curses.color_pair(1))
                         else:
-                            map.addstr(game_objects['tiles'][i].y - y, game_objects['tiles'][i].x - x, game_objects['tiles'][i].ch, curses.color_pair(3))
+                            map.addstr(game_objects[key].y - y, game_objects[key].x - x, game_objects[key].ch, curses.color_pair(3))
                     if go_y == midy and go_x == midx:
                         map.addstr(go_y, go_x, 'P', curses.color_pair(2))
                 except curses.error: # Passing ncurses errors allows for resizing of windows without crashing

@@ -1,5 +1,7 @@
 # curses-map-generator
-This map generator is quite slow and not optimized. Maps larger than 300 may take very long times to create.
+This map generator is quite slow and not optimized. Maps larger than 300 may take very long times to create. 
+All maps are stored as compressed(gzip) json files. 
+All maps are compatible between [maps-rust](https://github.com/oatley/maps-rust), which is a faster version with no loading bars.
 
 # Warnings
 - Linux Only. Python Curses may not be installed by default on windows.
